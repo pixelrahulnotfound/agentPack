@@ -1,0 +1,31 @@
+# Binaries and build output
+agentpack
+/agentpack
+*.test
+*.out
+coverage*.txt
+dist/
+
+# Internal / sensitive planning docs (kept locally, never committed)
+plan.md
+PLAN*.md
+notes*.md
+*.private.md
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+
+# Pulled third-party agents (reproducible via pull, don't commit)
+pulled/
+out/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
