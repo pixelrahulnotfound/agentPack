@@ -21,7 +21,7 @@ The problem it solves: today every AI agent is snowflake setup. Prompts live in 
 ## Install
 
 ```bash
-git clone <this-repo> && cd agent_pack
+git clone https://github.com/pixelrahulnotfound/agentPack.git && cd agentPack
 go build -o agentpack ./cmd/agentpack
 ```
 
