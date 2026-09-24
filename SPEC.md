@@ -8,7 +8,7 @@
 name: research-assistant        # required, ^[a-z0-9][a-z0-9-_]{1,63}$
 version: 0.1.0                  # required, semver
 description: Short human text   # optional
-harness: claude-code            # required, v1 only allows: claude-code
+harness: claude-code            # required, one of: claude-code, opencode
 model: claude-sonnet-4-5        # required, non-empty string
 prompt: ./prompt.md             # required, path (relative to manifest dir) to prompt file
 tools:                          # optional, default []
@@ -32,7 +32,7 @@ memory:                         # optional
 1. File must parse as YAML and map to the schema above. Unknown top-level fields are rejected.
 2. `name` must match `^[a-z0-9][a-z0-9-_]{1,63}$`.
 3. `version` must be valid semver `MAJOR.MINOR.PATCH` (no `v` prefix, prerelease allowed).
-4. `harness` must be `claude-code` in v1.
+4. `harness` must be one of `claude-code`, `opencode`.
 5. `model` non-empty.
 6. `prompt` must point to an existing file relative to the manifest directory.
 7. Every `skills[]` entry must point to an existing directory containing a `SKILL.md`.
@@ -51,9 +51,12 @@ source_repo: https://github.com/example/research-assistant
 commit: abc123def456abc123def456abc123def456abcd
 manifest_path: examples/research-assistant/agentpack.yaml
 updated_at: 2026-09-24T00:00:00Z
+description: A personal research assistant that summarizes papers   # optional, from manifest
+harness: claude-code                                               # optional, from manifest
+tools: [web-search, github]                                        # optional, MCP names from manifest
 ```
 
-`commit` must be a 40-char hex SHA. Consumers `pull` by reading this file, cloning the source repo at the pinned commit, and reading `manifest_path`.
+`commit` must be a 40-char hex SHA. `description`/`harness`/`tools` are discovery metadata recorded by `agentpack push`; entries without them remain valid. Consumers `pull` by reading this file, cloning the source repo at the pinned commit, and reading `manifest_path`. `agentpack search` / `serve` rank over name (3 pts), description (2 pts), harness/tools (1 pt).
 
 ## AGENT.md (per-manifest, agent-readable)
 

@@ -8,14 +8,17 @@ Agent-native by design: every part is usable by a human (CLI + README) and by a 
 
 ```bash
 go build -o agentpack ./cmd/agentpack
-./agentpack init ./my-agent --name my-agent
+./agentpack init ./my-agent --name my-agent --harness opencode
 ./agentpack run --dir ./my-agent --dry-run
 ./agentpack diff examples/research-assistant/agentpack.yaml my-agent/agentpack.yaml
 ./agentpack push --dir examples/research-assistant --registry ./registry-index --source-repo https://github.com/example/research-assistant
 ./agentpack pull research-assistant --registry ./registry-index --out ./pulled
-./agentpack run --dir examples/research-assistant --dry-run
+./agentpack search papers --registry ./registry-index
+./agentpack serve --registry ./registry-index --port 8080   # GET /agents /agents/:name /search?q=
 ./agentpack --json diff <a> <b>   # machine-readable
 ```
+
+Supported harnesses: `claude-code` (default image `claude-code-sandbox:latest`), `opencode` (`opencode-sandbox:latest`); override with `run --image`. The discovery API (`search` + `serve`) is the live query layer over the static registry index.
 
 ## Layout
 

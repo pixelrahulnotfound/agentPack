@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,14 +18,19 @@ import (
 
 var shaRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-// Entry is one published agent pointer.
+// Entry is one published agent pointer. Description, Harness and Tools are
+// optional discovery metadata recorded by `push`; older entries without them
+// remain valid.
 type Entry struct {
-	Name         string `yaml:"name"`
-	Version      string `yaml:"version"`
-	SourceRepo   string `yaml:"source_repo"`
-	Commit       string `yaml:"commit"`
-	ManifestPath string `yaml:"manifest_path"`
-	UpdatedAt    string `yaml:"updated_at"`
+	Name         string   `yaml:"name" json:"name"`
+	Version      string   `yaml:"version" json:"version"`
+	SourceRepo   string   `yaml:"source_repo" json:"source_repo"`
+	Commit       string   `yaml:"commit" json:"commit"`
+	ManifestPath string   `yaml:"manifest_path" json:"manifest_path"`
+	UpdatedAt    string   `yaml:"updated_at" json:"updated_at"`
+	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Harness      string   `yaml:"harness,omitempty" json:"harness,omitempty"`
+	Tools        []string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 func (e *Entry) Validate() error {
@@ -36,7 +43,91 @@ func (e *Entry) Validate() error {
 	return nil
 }
 
-// IndexPath returns the file for name inside the registry dir.
+// List returns all index entries sorted by name. A missing registry dir
+// yields an empty list, not an error.
+func List(registryDir string) ([]Entry, error) {
+	files, err := filepath.Glob(filepath.Join(registryDir, "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	out := []Entry{}
+	for _, f := range files {
+		if strings.HasSuffix(f, "README.yaml") {
+			continue
+		}
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		var e Entry
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", f, err)
+		}
+		if err := e.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// Match is one search hit with its relevance score.
+type Match struct {
+	Entry Entry    `json:"entry"`
+	Score int      `json:"score"`
+	Why   []string `json:"why"`
+}
+
+// Search ranks entries against a free-text query. Name hits score 3,
+// description hits 2, harness/tool hits 1. Empty query returns everything
+// (score 0). Results are sorted by score desc, then name.
+func Search(registryDir, query string) ([]Match, error) {
+	entries, err := List(registryDir)
+	if err != nil {
+		return nil, err
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		matches := make([]Match, 0, len(entries))
+		for _, e := range entries {
+			matches = append(matches, Match{Entry: e})
+		}
+		return matches, nil
+	}
+	terms := strings.Fields(q)
+	var matches []Match
+	for _, e := range entries {
+		m := Match{Entry: e}
+		name := strings.ToLower(e.Name)
+		desc := strings.ToLower(e.Description)
+		harness := strings.ToLower(e.Harness)
+		tools := strings.ToLower(strings.Join(e.Tools, " "))
+		for _, t := range terms {
+			switch {
+			case strings.Contains(name, t):
+				m.Score += 3
+				m.Why = append(m.Why, "name")
+			case strings.Contains(desc, t):
+				m.Score += 2
+				m.Why = append(m.Why, "description")
+			case strings.Contains(harness, t) || strings.Contains(tools, t):
+				m.Score += 1
+				m.Why = append(m.Why, "capability")
+			}
+		}
+		if m.Score > 0 {
+			matches = append(matches, m)
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].Score != matches[j].Score {
+			return matches[i].Score > matches[j].Score
+		}
+		return matches[i].Entry.Name < matches[j].Entry.Name
+	})
+	return matches, nil
+}
 func IndexPath(registryDir, name string) string {
 	return filepath.Join(registryDir, name+".yaml")
 }

@@ -62,3 +62,16 @@ func TestRejectMissingPrompt(t *testing.T) {
 		t.Fatal("expected missing-prompt error")
 	}
 }
+
+func TestHarnessSupport(t *testing.T) {
+	for _, h := range []string{"claude-code", "opencode"} {
+		p := writeAgent(t, "name: h-"+h+"\nversion: 0.1.0\nharness: "+h+"\nmodel: m\nprompt: ./prompt.md\n")
+		if _, err := Load(p); err != nil {
+			t.Fatalf("harness %s should validate: %v", h, err)
+		}
+	}
+	p := writeAgent(t, "name: h-bad\nversion: 0.1.0\nharness: langgraph\nmodel: m\nprompt: ./prompt.md\n")
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected unknown-harness error")
+	}
+}

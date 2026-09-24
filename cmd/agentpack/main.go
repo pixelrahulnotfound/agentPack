@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,7 +28,8 @@ Usage:
   agentpack [--json] <command> [options]
 
 Commands:
-  init <dir> [--name NAME]     scaffold agentpack.yaml + prompt.md + AGENT.md + skills/
+  init <dir> [--name NAME] [--harness HARNESS]
+                               scaffold agentpack.yaml + prompt.md + AGENT.md + skills/
   run [--dir DIR] [--image IMG] [--dry-run] [-- CMD...]
                                validate manifest and launch harness in Docker sandbox
   pull NAME --registry DIR --out DIR
@@ -35,6 +37,9 @@ Commands:
   push --dir DIR --registry DIR --source-repo URL
                                publish agent pointer to registry index
   diff <fileA> <fileB>          field-level manifest comparison
+  search QUERY --registry DIR  rank agents in the registry by relevance
+  serve --registry DIR --port PORT
+                               run the live discovery HTTP API
   version                       print version
 
 Global flags:
@@ -77,6 +82,10 @@ func main() {
 		err = cmdPush(rest)
 	case "diff":
 		err = cmdDiff(rest)
+	case "search":
+		err = cmdSearch(rest)
+	case "serve":
+		err = cmdServe(rest)
 	default:
 		output.Failure("unknown_command", "unknown command "+cmd, "run: agentpack --help")
 		os.Exit(1)
@@ -126,10 +135,15 @@ func parseMixed(fs *flag.FlagSet, args []string, valueFlags map[string]bool) []s
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	name := fs.String("name", "my-agent", "agent name")
-	pos := parseMixed(fs, args, map[string]bool{"name": true})
+	harness := fs.String("harness", "claude-code", "target harness: claude-code or opencode")
+	pos := parseMixed(fs, args, map[string]bool{"name": true, "harness": true})
 	dir := "."
 	if len(pos) > 0 {
 		dir = pos[0]
+	}
+	if *harness != "claude-code" && *harness != "opencode" {
+		output.Failure("bad_args", "invalid harness "+*harness, "supported harnesses: claude-code, opencode")
+		return fmt.Errorf("args")
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "skills", "starter"), 0o755); err != nil {
 		output.Failure("init_failed", err.Error(), "")
@@ -143,7 +157,7 @@ func cmdInit(args []string) error {
 	yman := fmt.Sprintf(`name: %s
 version: 0.1.0
 description: A personal research assistant
-harness: claude-code
+harness: %s
 model: claude-sonnet-4-5
 prompt: ./prompt.md
 tools:
@@ -158,18 +172,18 @@ permissions:
 memory:
   path: ./memory/
   max_entries: 200
-`, *name)
+`, *name, *harness)
 	prompt := "# System prompt for " + *name + "\n\nYou are a helpful personal agent. Be concise, cite sources, and say when you don't know.\n"
 	agentmd := fmt.Sprintf(`# %s — agent-readable card
 
 - What: starter personal agent created by `+"`agentpack init`"+`.
-- Harness: claude-code. Model: claude-sonnet-4-5.
+- Harness: %s. Model: claude-sonnet-4-5.
 - Tools: web-search (search, fetch). Skills: ./skills/starter.
 - Permissions: filesystem [./work], network [api.github.com], exec false.
 - Invoke: `+"`agentpack run --dir .`"+` from this directory.
 - Input: a natural-language task on stdin or as CLI args. Output: concise markdown answer with sources.
 - Manifest: ./agentpack.yaml is the source of truth; this file is derived from it.
-`, *name)
+`, *name, *harness)
 	skill := "# Starter skill\n\nReplace this with reusable instructions. This dir must keep a SKILL.md (required by SPEC.md).\n"
 	write := func(p, c string) error { return os.WriteFile(p, []byte(c), 0o644) }
 	if err := write(mpath, yman); err != nil {
@@ -190,7 +204,7 @@ memory:
 func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "agent directory containing agentpack.yaml")
-	image := fs.String("image", "claude-code-sandbox:latest", "docker image for the harness")
+	image := fs.String("image", "", "docker image for the harness (default: per-harness sandbox image)")
 	dry := fs.Bool("dry-run", false, "validate + print docker command without running")
 	pos := parseMixed(fs, args, map[string]bool{"dir": true, "image": true})
 	extra := pos
@@ -201,13 +215,17 @@ func cmdRun(args []string) error {
 		output.Failure("invalid_manifest", err.Error(), "fix "+mpath+" per SPEC.md")
 		return err
 	}
+	img := *image
+	if img == "" {
+		img = sandbox.DefaultImage(m.Harness)
+	}
 	if *dry {
-		dargs := sandbox.RunArgs(*dir, *image, extra)
+		dargs := sandbox.RunArgs(*dir, img, extra)
 		output.Success(map[string]any{"manifest": m.Name, "docker": append([]string{"docker"}, dargs...)},
 			"dry-run ok: "+m.Name+" "+m.Version+" ("+m.Harness+"/"+m.Model+")\n$ docker "+strings.Join(dargs, " "))
 		return nil
 	}
-	if err := sandbox.Run(*dir, *image, extra); err != nil {
+	if err := sandbox.Run(*dir, img, extra); err != nil {
 		output.Failure("sandbox_failed", err.Error(), "is docker running? try --dry-run to validate without docker")
 		return err
 	}
@@ -282,7 +300,12 @@ func cmdPush(args []string) error {
 		mp = "agentpack.yaml"
 		// Keep it simple and predictable for v1: manifest at agent root.
 	}
-	e := registry.Entry{Name: m.Name, Version: m.Version, SourceRepo: *source, Commit: commit, ManifestPath: mp}
+	tools := make([]string, 0, len(m.Tools))
+	for _, t := range m.Tools {
+		tools = append(tools, t.MCP)
+	}
+	e := registry.Entry{Name: m.Name, Version: m.Version, SourceRepo: *source, Commit: commit, ManifestPath: mp,
+		Description: m.Description, Harness: m.Harness, Tools: tools}
 	if err := registry.Write(*reg, e); err != nil {
 		output.Failure("push_failed", err.Error(), "")
 		return err
@@ -358,5 +381,42 @@ func cmdPull(args []string) error {
 	_ = data
 	output.Success(map[string]string{"name": e.Name, "version": e.Version, "commit": e.Commit, "out": dest},
 		fmt.Sprintf("pulled %s %s @ %s -> %s", e.Name, e.Version, e.Commit[:12], dest))
+	return nil
+}
+
+// ---------- search ----------
+
+func cmdSearch(args []string) error {
+	fs := flag.NewFlagSet("search", flag.ContinueOnError)
+	reg := fs.String("registry", "registry-index", "registry index dir")
+	limit := fs.Int("limit", 10, "max results")
+	pos := parseMixed(fs, args, map[string]bool{"registry": true, "limit": true})
+	query := strings.Join(pos, " ")
+	matches, err := registry.Search(*reg, query)
+	if err != nil {
+		output.Failure("search_failed", err.Error(), "check --registry dir")
+		return err
+	}
+	if *limit >= 0 && len(matches) > *limit {
+		matches = matches[:*limit]
+	}
+	if output.JSONMode {
+		output.Success(matches, "")
+		return nil
+	}
+	if len(matches) == 0 {
+		output.Success(matches, "no agents match "+strconv.Quote(query))
+		return nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d result(s) for %s:\n", len(matches), strconv.Quote(query))
+	for _, m := range matches {
+		fmt.Fprintf(&sb, "  %s %s [%s] score=%d (%s)\n",
+			m.Entry.Name, m.Entry.Version, m.Entry.Harness, m.Score, strings.Join(m.Why, ","))
+		if m.Entry.Description != "" {
+			fmt.Fprintf(&sb, "    %s\n", m.Entry.Description)
+		}
+	}
+	output.Success(matches, sb.String())
 	return nil
 }

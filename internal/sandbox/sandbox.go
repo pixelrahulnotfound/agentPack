@@ -8,6 +8,14 @@ import (
 	"path/filepath"
 )
 
+// DefaultImage maps a manifest harness to its sandbox image.
+func DefaultImage(harness string) string {
+	if harness == "opencode" {
+		return "opencode-sandbox:latest"
+	}
+	return "claude-code-sandbox:latest"
+}
+
 // Available reports whether the docker CLI is on PATH and the daemon responds.
 func Available() error {
 	if _, err := exec.LookPath("docker"); err != nil {

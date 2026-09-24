@@ -85,8 +85,8 @@ func (m *Manifest) Validate(base string) error {
 	if !semverRe.MatchString(m.Version) {
 		return fmt.Errorf("invalid version %q: must be MAJOR.MINOR.PATCH semver", m.Version)
 	}
-	if m.Harness != "claude-code" {
-		return fmt.Errorf("invalid harness %q: v1 only supports \"claude-code\"", m.Harness)
+	if m.Harness != "claude-code" && m.Harness != "opencode" {
+		return fmt.Errorf("invalid harness %q: supported harnesses are \"claude-code\", \"opencode\"", m.Harness)
 	}
 	if strings.TrimSpace(m.Model) == "" {
 		return fmt.Errorf("model must be non-empty")

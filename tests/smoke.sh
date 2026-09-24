@@ -16,4 +16,9 @@ echo "name: Bad!" > "$T/bad.yaml"
 if "$BIN" --json diff examples/research-assistant/agentpack.yaml "$T/bad.yaml" 2>/dev/null; then
   echo "expected diff to fail on invalid manifest"; exit 1
 fi
+"$BIN" init "$T/oc" --name oc-agent --harness opencode || exit 1
+"$BIN" run --dir "$T/oc" --dry-run > /dev/null || exit 1
+if "$BIN" init "$T/nope" --harness bogus 2>/dev/null; then
+  echo "expected init to reject bogus harness"; exit 1
+fi
 echo "smoke OK"
