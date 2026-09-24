@@ -1,0 +1,20 @@
+name: research-assistant
+version: 0.1.0
+description: A personal research assistant that summarizes papers with cited sources
+harness: claude-code
+model: claude-sonnet-4-5
+prompt: ./prompt.md
+tools:
+  - mcp: web-search
+    scope: [search, fetch]
+  - mcp: github
+    scope: [read]
+skills:
+  - ./skills/paper-summarizer
+permissions:
+  filesystem: [./work]
+  network: [api.github.com, arxiv.org]
+  exec: false
+memory:
+  path: ./memory/
+  max_entries: 200

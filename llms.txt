@@ -1,0 +1,21 @@
+# AgentPack — llms.txt
+
+> AgentPack packages a personal AI agent's setup (prompt, MCP tools, skills, permissions, memory) into one versioned manifest (`agentpack.yaml`) plus a CLI to build, run, and share it.
+
+## How an agent uses this repo (no human needed)
+
+1. Read `SPEC.md` — the frozen `agentpack.yaml` schema and validation rules.
+2. Inspect `examples/research-assistant/agentpack.yaml` + its `AGENT.md` for a real example.
+3. Install: `go build -o agentpack ./cmd/agentpack`.
+4. Commands (append `--json` for `{"ok":true,"data":...}` / `{"ok":false,"error":{"code","message","hint"}}`):
+   - `agentpack init <dir> --name NAME` — scaffold a new agent.
+   - `agentpack run --dir <dir> --dry-run` — validate without Docker; drop `--dry-run` to launch `docker run` sandbox.
+   - `agentpack diff <a> <b>` — field-level manifest comparison.
+   - `agentpack push --dir <d> --registry <r> --source-repo <url>` — publish pointer (name → repo + pinned commit).
+   - `agentpack pull <name> --registry <r> --out <dir>` — fetch at pinned commit.
+5. Per-manifest `AGENT.md` (next to every `agentpack.yaml`) is the agent-readable card: capabilities, permission bounds, invoke line, I/O contract. Treat `agentpack.yaml` as source of truth.
+
+## Key paths
+
+- `SPEC.md`, `cmd/agentpack/main.go`, `internal/manifest/`, `internal/registry/`, `internal/sandbox/`, `internal/diff/`
+- `examples/research-assistant/`, `registry-index/`
